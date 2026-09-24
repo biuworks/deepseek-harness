@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 0
+          fetch-depth: 1
           persist-credentials: false
 
       - name: Free disk space
@@ -38,8 +38,9 @@ jobs:
       - name: Mirror source tree to short path
         shell: pwsh
         run: |
-          robocopy "$env:GITHUB_WORKSPACE" 'C:\dsh' /E /NFL /NDL /NJH /NJS /NP /XD '.git'
+          robocopy "$env:GITHUB_WORKSPACE" 'C:\dsh' /E /NFL /NDL /NJH /NJS /NP
           if ($LASTEXITCODE -le 7) { $global:LASTEXITCODE = 0 } else { throw "robocopy failed with $LASTEXITCODE" }
+          git -C C:\dsh rev-parse HEAD
           Get-ChildItem 'C:\dsh' | Select-Object -First 8 Name | Format-Table -AutoSize
 
       - uses: pnpm/action-setup@v4
