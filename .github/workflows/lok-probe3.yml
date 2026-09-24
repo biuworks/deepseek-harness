@@ -116,3 +116,21 @@ jobs:
           node "$cli" convert --max-image-resolution 192 --max-output-bytes 104857600 --input "$env:RUNNER_TEMP\inputs\input.docx" --output "$env:RUNNER_TEMP\probe\t6.pdf"
           if ($LASTEXITCODE -eq 0) { Write-Host "RESULT t6-short+flags=OK" } else { Write-Host "RESULT t6-short+flags=FAIL exit=$LASTEXITCODE" }
           exit 0
+
+      - name: Test 7 - depth sweep
+        shell: pwsh
+        run: |
+          $depths = @('C:\p', 'C:\p23456789012345678901234567890', 'C:\p2345678901234567890123456789012345678901234567890123456789012345678901234567890')
+          foreach ($root in $depths) {
+            New-Item -ItemType Directory -Force "$root\lokit" | Out-Null
+            Push-Location "$root\lokit"
+            npm init -y | Out-Null
+            npm install --no-audit --no-fund "@deepseek-ai/libreoffice-kit@0.1.0" 2>&1 | Out-Null
+            $cli = (Get-ChildItem "$root\lokit\node_modules\@deepseek-ai\libreoffice-kit\lib\cli.js").FullName
+            $len = $cli.Length
+            Set-Location "$env:RUNNER_TEMP\probe"
+            node "$cli" convert --input "$env:RUNNER_TEMP\inputs\input.docx" --output "$env:RUNNER_TEMP\probe\sweep.pdf" 2>&1 | Out-Null
+            if ($LASTEXITCODE -eq 0) { Write-Host "RESULT sweep len=$len OK" } else { Write-Host "RESULT sweep len=$len FAIL" }
+            Pop-Location
+          }
+          exit 0
