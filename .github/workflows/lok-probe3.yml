@@ -1,0 +1,88 @@
+name: LibreOffice Kit probe 3 (self)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lok-probe3
+  cancel-in-progress: true
+
+jobs:
+  probe3:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Generate office inputs
+        shell: pwsh
+        run: |
+          pip install --quiet python-docx openpyxl python-pptx
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\inputs" | Out-Null
+          python apps/desktop/tests/fixtures/office-conversion-inputs.py "$env:RUNNER_TEMP\inputs"
+          Get-ChildItem "$env:RUNNER_TEMP\inputs"
+
+      - name: Install LibreOffice Kit 0.1.0 (short path)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\probe" | Out-Null
+          Set-Location "$env:RUNNER_TEMP\probe"
+          npm init -y | Out-Null
+          npm install --no-audit --no-fund "@deepseek-ai/libreoffice-kit@0.1.0"
+
+      - name: Test 1 - CLI convert baseline (limits 144)
+        shell: pwsh
+        run: |
+          Set-Location "$env:RUNNER_TEMP\probe"
+          npx libreoffice-kit convert --input "$env:RUNNER_TEMP\inputs\input.docx" --output "$env:RUNNER_TEMP\probe\t1.pdf"
+          if ($LASTEXITCODE -eq 0) { Write-Host "RESULT t1-baseline=OK" } else { Write-Host "RESULT t1-baseline=FAIL exit=$LASTEXITCODE" }
+
+      - name: Test 2 - CLI convert with office-to-pdf limits (192 DPI, 100MB)
+        shell: pwsh
+        run: |
+          Set-Location "$env:RUNNER_TEMP\probe"
+          npx libreoffice-kit convert --max-image-resolution 192 --max-output-bytes 104857600 --input "$env:RUNNER_TEMP\inputs\input.docx" --output "$env:RUNNER_TEMP\probe\t2.pdf"
+          if ($LASTEXITCODE -eq 0) { Write-Host "RESULT t2-flags192=OK" } else { Write-Host "RESULT t2-flags192=FAIL exit=$LASTEXITCODE" }
+
+      - name: Test 3 - deep path install + convert
+        shell: pwsh
+        run: |
+          $prefix = 'D:\a\deepseek-harness\deepseek-harness\apps\desktop\.desktop-build\targets\win-x64\unsigned-artifacts\win-unpacked\resources\app.asar.unpacked\dsh\node_modules'
+          Write-Host "deep path length: $prefix.Length"
+          New-Item -ItemType Directory -Force "$prefix\@deepseek-ai" | Out-Null
+          Set-Location "$prefix\@deepseek-ai"
+          npm init -y | Out-Null
+          npm install --no-audit --no-fund "@deepseek-ai/libreoffice-kit@0.1.0"
+          Set-Location "$env:RUNNER_TEMP\probe"
+          node "$prefix\@deepseek-ai\node_modules\@deepseek-ai\libreoffice-kit\lib\cli.js" convert --input "$env:RUNNER_TEMP\inputs\input.docx" --output "$env:RUNNER_TEMP\probe\t3.pdf"
+          if ($LASTEXITCODE -eq 0) { Write-Host "RESULT t3-deeppath=OK" } else { Write-Host "RESULT t3-deeppath=FAIL exit=$LASTEXITCODE" }
+
+      - name: Test 4 - deep path + office-to-pdf limits
+        shell: pwsh
+        run: |
+          $prefix = 'D:\a\deepseek-harness\deepseek-harness\apps\desktop\.desktop-build\targets\win-x64\unsigned-artifacts\win-unpacked\resources\app.asar.unpacked\dsh\node_modules'
+          Set-Location "$env:RUNNER_TEMP\probe"
+          node "$prefix\@deepseek-ai\node_modules\@deepseek-ai\libreoffice-kit\lib\cli.js" convert --max-image-resolution 192 --max-output-bytes 104857600 --input "$env:RUNNER_TEMP\inputs\input.docx" --output "$env:RUNNER_TEMP\probe\t4.pdf"
+          if ($LASTEXITCODE -eq 0) { Write-Host "RESULT t4-deep+flags=OK" } else { Write-Host "RESULT t4-deep+flags=FAIL exit=$LASTEXITCODE" }
+
+      - name: Summary
+        if: always()
+        shell: pwsh
+        run: Get-ChildItem "$env:RUNNER_TEMP\probe\*.pdf" -ErrorAction SilentlyContinue | Select-Object Name, Length | Format-Table -AutoSize
