@@ -88,3 +88,25 @@ jobs:
         if: always()
         shell: pwsh
         run: Get-ChildItem "$env:RUNNER_TEMP\probe\*.pdf" -ErrorAction SilentlyContinue | Select-Object Name, Length | Format-Table -AutoSize
+      - name: Test 5 - planned short-root depth (C:\dsh layout)
+        shell: pwsh
+        run: |
+          $prefix = 'C:\dsh\apps\desktop\.desktop-build\targets\win-x64\unsigned-artifacts\win-unpacked\resources\app.asar.unpacked\dsh\node_modules'
+          New-Item -ItemType Directory -Force "$prefix\lokit" | Out-Null
+          Set-Location "$prefix\lokit"
+          npm init -y | Out-Null
+          npm install --no-audit --no-fund "@deepseek-ai/libreoffice-kit@0.1.0"
+          $cli = (Get-ChildItem "$prefix\lokit\node_modules\@deepseek-ai\libreoffice-kit\lib\cli.js").FullName
+          Write-Host "cli path length: $($cli.Length)"
+          Set-Location "$env:RUNNER_TEMP\probe"
+          node "$cli" convert --input "$env:RUNNER_TEMP\inputs\input.docx" --output "$env:RUNNER_TEMP\probe\t5.pdf"
+          if ($LASTEXITCODE -eq 0) { Write-Host "RESULT t5-shortroot=OK" } else { Write-Host "RESULT t5-shortroot=FAIL exit=$LASTEXITCODE" }
+
+      - name: Test 6 - short-root depth + office-to-pdf limits
+        shell: pwsh
+        run: |
+          $prefix = 'C:\dsh\apps\desktop\.desktop-build\targets\win-x64\unsigned-artifacts\win-unpacked\resources\app.asar.unpacked\dsh\node_modules'
+          $cli = (Get-ChildItem "$prefix\lokit\node_modules\@deepseek-ai\libreoffice-kit\lib\cli.js").FullName
+          Set-Location "$env:RUNNER_TEMP\probe"
+          node "$cli" convert --max-image-resolution 192 --max-output-bytes 104857600 --input "$env:RUNNER_TEMP\inputs\input.docx" --output "$env:RUNNER_TEMP\probe\t6.pdf"
+          if ($LASTEXITCODE -eq 0) { Write-Host "RESULT t6-short+flags=OK" } else { Write-Host "RESULT t6-short+flags=FAIL exit=$LASTEXITCODE" }
