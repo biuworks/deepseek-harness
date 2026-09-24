@@ -1,5 +1,5 @@
 /** Keep prepared Windows PE files outside ASAR without changing their sealed bytes. */
-import { cp, lstat, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { cp, lstat, mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { readAsar } from 'app-builder-lib/out/asar/asar.js'
 import { windowsRuntimeCode } from './windows-runtime-signature.mjs'
@@ -17,13 +17,43 @@ function unpackPattern(path) {
 }
 
 /**
- * Install source-relative PE patterns in the configuration consumed by electron-builder.
+ * List every file of the installed LibreOffice engine packages.
+ * The native helper reads uno.ini, services.rdb, and other non-PE data from its
+ * program directory on the real filesystem, so the whole engine package must be
+ * unpacked beside the PE files, not sealed inside the ASAR archive.
+ * @param {string} sourceRoot Verified prepared dsh directory.
+ * @returns {Promise<string[]>} Absolute engine package file paths.
+ */
+async function officeEnginePackageFiles(sourceRoot) {
+  const scopeDir = join(sourceRoot, 'node_modules', '@deepseek-ai')
+  const files = []
+  let entries
+  try { entries = await readdir(scopeDir, { withFileTypes: true }) } catch { return files }
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !/^libreoffice-kit-(?:win32|darwin|linux)-/u.test(entry.name)) continue
+    const walk = async directory => {
+      for (const child of await readdir(directory, { withFileTypes: true })) {
+        const path = join(directory, child.name)
+        if (child.isDirectory()) await walk(path)
+        else if (child.isFile()) files.push(path)
+      }
+    }
+    await walk(join(scopeDir, entry.name))
+  }
+  return files
+}
+
+/**
+ * Install source-relative unpack patterns in the configuration consumed by electron-builder.
  * @param {import('app-builder-lib').BeforePackContext} context Active builder configuration and cleanup owner.
  * @param {string} sourceRoot Verified prepared dsh directory; its files remain unchanged.
- * @returns {Promise<string[]>} PE paths relative to the original prepared directory.
+ * @returns {Promise<string[]>} Unpacked file paths (PE code and complete Office engines) relative to the original prepared directory.
  */
 export async function prepareWindowsAsarUnpack(context, sourceRoot) {
-  const files = (await windowsRuntimeCode(sourceRoot)).map(file => relative(sourceRoot, file))
+  const files = [...new Set([
+    ...(await windowsRuntimeCode(sourceRoot)),
+    ...(await officeEnginePackageFiles(sourceRoot)),
+  ])].map(file => relative(sourceRoot, file))
   const { config, info } = context.packager
   const { appDir } = info
   let copyRoot = sourceRoot

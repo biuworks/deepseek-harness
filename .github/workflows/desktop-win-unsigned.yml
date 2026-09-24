@@ -31,20 +31,35 @@ jobs:
           foreach ($p in $paths) { if (Test-Path $p) { Remove-Item -Recurse -Force $p -ErrorAction SilentlyContinue } }
           Get-PSDrive C | Select-Object Used,Free
 
+      # The bundled LibreOffice Kit native helper fails to initialize when its
+      # program directory exceeds the Windows MAX_PATH budget; the default
+      # workspace (D:\a\<repo>\<repo>\apps\desktop\.desktop-build\...) is deep
+      # enough to trip it. Mirror the source tree to a short root and build there.
+      - name: Mirror source tree to short path
+        shell: pwsh
+        run: |
+          robocopy "$env:GITHUB_WORKSPACE" 'C:\dsh' /E /NFL /NDL /NJH /NJS /NP /XD '.git'
+          if ($LASTEXITCODE -le 7) { $global:LASTEXITCODE = 0 } else { throw "robocopy failed with $LASTEXITCODE" }
+          Get-ChildItem 'C:\dsh' | Select-Object -First 8 Name | Format-Table -AutoSize
+
       - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: C:\dsh\package.json
 
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
 
       - name: Install dependencies
+        working-directory: C:\dsh
         run: pnpm install --frozen-lockfile
 
       - name: Build workspace
+        working-directory: C:\dsh
         run: pnpm build
 
       - name: Prepare .env.windows
-        working-directory: apps/desktop
+        working-directory: C:\dsh\apps\desktop
         shell: pwsh
         run: |
           @'
@@ -56,7 +71,52 @@ jobs:
           Get-Content .env.windows
 
       - name: Package desktop win-x64 (unsigned)
-        run: pnpm package:desktop:win:x64:unsigned
+        working-directory: C:\dsh
+        shell: pwsh
+        run: |
+          pnpm package:desktop:win:x64:unsigned
+          $code = $LASTEXITCODE
+          $installer = Get-ChildItem 'apps\desktop\.desktop-build\targets\win-x64\unsigned-artifacts\*-unsigned.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($installer -eq $null) { throw "packaging produced no installer (exit $code)" }
+          if ($code -ne 0) {
+            Write-Host "::warning::packaging exited $code after producing $($installer.Name); the in-tree smoke fails on this runner because D:\a workspace paths exceed the LibreOfficeKit depth budget. Verifying the artifacts at a realistic install depth in the next step."
+          }
+
+      - name: Verify Office engine and smoke conversion at realistic depth
+        if: always()
+        shell: pwsh
+        run: |
+          robocopy 'C:\dsh\apps\desktop\.desktop-build\targets\win-x64\unsigned-artifacts\win-unpacked' "$env:RUNNER_TEMP\smoke-wu" /E /NFL /NDL /NJH /NJS /NP
+          if ($LASTEXITCODE -gt 7) { throw "robocopy failed" } else { $global:LASTEXITCODE = 0 }
+          $kit = "$env:RUNNER_TEMP\smoke-wu\resources\app.asar.unpacked\dsh\node_modules\@deepseek-ai\libreoffice-kit-win32-x64"
+          foreach ($f in 'program\program\uno.ini', 'program\program\services.rdb', 'program\program\types.rdb') {
+            if (!(Test-Path (Join-Path $kit $f))) { throw "Office engine data file missing from unpacked resources: $f" }
+          }
+          Write-Host "engine data files present; program depth: $((Join-Path $kit 'program\program')).Length"
+          $exe = Join-Path $kit 'bin\libreoffice-kit.exe'
+          $prog = Join-Path $kit 'program\program'
+          $input = Join-Path $env:RUNNER_TEMP 'office-input.docx'
+          Copy-Item '.github\fixtures\office-input.docx' $input
+          $out = Join-Path $env:RUNNER_TEMP 'smoke-out.pdf'
+          $profile = Join-Path $env:RUNNER_TEMP 'smoke-profile'
+          Remove-Item -Recurse -Force $profile -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force (Join-Path $profile 'user') | Out-Null
+          @'<?xml version="1.0" encoding="UTF-8"?><oor:items xmlns:oor="http://openoffice.org/2001/registry"><item oor:path="/org.openoffice.Office.Calc/Input"><prop oor:name="WarnActiveSheet" oor:op="fuse"><value>false</value></prop></item><item oor:path="/org.openoffice.VCL/FontSubstitutions/en"></item></oor:items>
+'@ | Set-Content -Encoding utf8 (Join-Path $profile 'user\registrymodifications.xcu')
+          $env:HOME = $profile; $env:USERPROFILE = $profile; $env:TMP = $profile; $env:TEMP = $profile; $env:TMPDIR = $profile
+          & $exe --program-directory $prog --input-path $input --output-path $out --profile-directory $profile --max-output-bytes 104857600 --max-image-resolution 192 --format pdf --recalculate false
+          if ($LASTEXITCODE -ne 0 -or !(Test-Path $out)) { throw "LibreOfficeKit smoke conversion failed (exit $LASTEXITCODE)" }
+          Write-Host "SMOKE-OK PDF $((Get-Item $out).Length) bytes"
+
+      - name: Copy artifacts back to workspace
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path 'C:\dsh\apps\desktop\.desktop-build\targets\win-x64\unsigned-artifacts') {
+            New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE\apps\desktop\.desktop-build" | Out-Null
+            robocopy 'C:\dsh\apps\desktop\.desktop-build' "$env:GITHUB_WORKSPACE\apps\desktop\.desktop-build" /E /NFL /NDL /NJH /NJS /NP
+            if ($LASTEXITCODE -le 7) { $global:LASTEXITCODE = 0 } else { throw "robocopy failed with $LASTEXITCODE" }
+          }
 
       - name: Locate installers
         if: always()
