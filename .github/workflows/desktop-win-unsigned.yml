@@ -101,8 +101,9 @@ jobs:
           $profile = Join-Path $env:RUNNER_TEMP 'smoke-profile'
           Remove-Item -Recurse -Force $profile -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force (Join-Path $profile 'user') | Out-Null
-          @'<?xml version="1.0" encoding="UTF-8"?><oor:items xmlns:oor="http://openoffice.org/2001/registry"><item oor:path="/org.openoffice.Office.Calc/Input"><prop oor:name="WarnActiveSheet" oor:op="fuse"><value>false</value></prop></item><item oor:path="/org.openoffice.VCL/FontSubstitutions/en"></item></oor:items>
-'@ | Set-Content -Encoding utf8 (Join-Path $profile 'user\registrymodifications.xcu')
+          @'
+          <?xml version="1.0" encoding="UTF-8"?><oor:items xmlns:oor="http://openoffice.org/2001/registry"><item oor:path="/org.openoffice.Office.Calc/Input"><prop oor:name="WarnActiveSheet" oor:op="fuse"><value>false</value></prop></item><item oor:path="/org.openoffice.VCL/FontSubstitutions/en"></item></oor:items>
+          '@ | Set-Content -Encoding utf8 (Join-Path $profile 'user\registrymodifications.xcu')
           $env:HOME = $profile; $env:USERPROFILE = $profile; $env:TMP = $profile; $env:TEMP = $profile; $env:TMPDIR = $profile
           & $exe --program-directory $prog --input-path $input --output-path $out --profile-directory $profile --max-output-bytes 104857600 --max-image-resolution 192 --format pdf --recalculate false
           if ($LASTEXITCODE -ne 0 -or !(Test-Path $out)) { throw "LibreOfficeKit smoke conversion failed (exit $LASTEXITCODE)" }
