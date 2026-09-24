@@ -53,6 +53,7 @@ jobs:
           Set-Location "$env:RUNNER_TEMP\probe"
           npx libreoffice-kit convert --input "$env:RUNNER_TEMP\inputs\input.docx" --output "$env:RUNNER_TEMP\probe\t1.pdf"
           if ($LASTEXITCODE -eq 0) { Write-Host "RESULT t1-baseline=OK" } else { Write-Host "RESULT t1-baseline=FAIL exit=$LASTEXITCODE" }
+          exit 0
 
       - name: Test 2 - CLI convert with office-to-pdf limits (192 DPI, 100MB)
         shell: pwsh
@@ -60,6 +61,7 @@ jobs:
           Set-Location "$env:RUNNER_TEMP\probe"
           npx libreoffice-kit convert --max-image-resolution 192 --max-output-bytes 104857600 --input "$env:RUNNER_TEMP\inputs\input.docx" --output "$env:RUNNER_TEMP\probe\t2.pdf"
           if ($LASTEXITCODE -eq 0) { Write-Host "RESULT t2-flags192=OK" } else { Write-Host "RESULT t2-flags192=FAIL exit=$LASTEXITCODE" }
+          exit 0
 
       - name: Test 3 - deep path install + convert
         shell: pwsh
@@ -74,6 +76,7 @@ jobs:
           Set-Location "$env:RUNNER_TEMP\probe"
           node "$cli" convert --input "$env:RUNNER_TEMP\inputs\input.docx" --output "$env:RUNNER_TEMP\probe\t3.pdf"
           if ($LASTEXITCODE -eq 0) { Write-Host "RESULT t3-deeppath=OK" } else { Write-Host "RESULT t3-deeppath=FAIL exit=$LASTEXITCODE" }
+          exit 0
 
       - name: Test 4 - deep path + office-to-pdf limits
         shell: pwsh
@@ -83,6 +86,7 @@ jobs:
           Set-Location "$env:RUNNER_TEMP\probe"
           node "$cli" convert --max-image-resolution 192 --max-output-bytes 104857600 --input "$env:RUNNER_TEMP\inputs\input.docx" --output "$env:RUNNER_TEMP\probe\t4.pdf"
           if ($LASTEXITCODE -eq 0) { Write-Host "RESULT t4-deep+flags=OK" } else { Write-Host "RESULT t4-deep+flags=FAIL exit=$LASTEXITCODE" }
+          exit 0
 
       - name: Summary
         if: always()
@@ -101,6 +105,7 @@ jobs:
           Set-Location "$env:RUNNER_TEMP\probe"
           node "$cli" convert --input "$env:RUNNER_TEMP\inputs\input.docx" --output "$env:RUNNER_TEMP\probe\t5.pdf"
           if ($LASTEXITCODE -eq 0) { Write-Host "RESULT t5-shortroot=OK" } else { Write-Host "RESULT t5-shortroot=FAIL exit=$LASTEXITCODE" }
+          exit 0
 
       - name: Test 6 - short-root depth + office-to-pdf limits
         shell: pwsh
@@ -110,3 +115,4 @@ jobs:
           Set-Location "$env:RUNNER_TEMP\probe"
           node "$cli" convert --max-image-resolution 192 --max-output-bytes 104857600 --input "$env:RUNNER_TEMP\inputs\input.docx" --output "$env:RUNNER_TEMP\probe\t6.pdf"
           if ($LASTEXITCODE -eq 0) { Write-Host "RESULT t6-short+flags=OK" } else { Write-Host "RESULT t6-short+flags=FAIL exit=$LASTEXITCODE" }
+          exit 0
