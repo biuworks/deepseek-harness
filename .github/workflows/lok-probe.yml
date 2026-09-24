@@ -1,0 +1,77 @@
+name: LibreOffice Kit probe (self)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lok-probe
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, windows-2022]
+        lok: ['0.1.0', '0.1.1']
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Generate office inputs
+        shell: pwsh
+        run: |
+          pip install --quiet python-docx openpyxl python-pptx
+          python apps/desktop/tests/fixtures/office-conversion-inputs.py "$env:RUNNER_TEMP\inputs"
+          Get-ChildItem "$env:RUNNER_TEMP\inputs" | Select-Object Name, Length | Format-Table -AutoSize
+
+      - name: Install LibreOffice Kit ${{ matrix.lok }}
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\probe" | Out-Null
+          Set-Location "$env:RUNNER_TEMP\probe"
+          npm init -y | Out-Null
+          npm install --no-audit --no-fund "@deepseek-ai/libreoffice-kit@${{ matrix.lok }}"
+          node -e "const p=require('@deepseek-ai/libreoffice-kit/package.json'); console.log('installed', p.name, p.version)"
+
+      - name: Capabilities
+        shell: pwsh
+        run: |
+          Set-Location "$env:RUNNER_TEMP\probe"
+          npx libreoffice-kit capabilities
+
+      - name: Convert docx/xlsx/pptx (default PATH)
+        shell: pwsh
+        run: |
+          Set-Location "$env:RUNNER_TEMP\probe"
+          $results = @()
+          foreach ($ext in 'docx','xlsx','pptx') {
+            npx libreoffice-kit convert --input "$env:RUNNER_TEMP\inputs\input.$ext" --output "$env:RUNNER_TEMP\probe\out.$ext.pdf" 2>&1 | Tee-Object -Variable cmdOut
+            if ($LASTEXITCODE -ne 0) { Write-Host "RESULT(default-PATH) $ext=FAIL exit=$LASTEXITCODE"; $cmdOut | Select-Object -Last 5 }
+            else { Write-Host "RESULT(default-PATH) $ext=OK size=$((Get-Item "$env:RUNNER_TEMP\probe\out.$ext.pdf").Length)" }
+          }
+
+      - name: Convert docx (PATH stripped, mimic smoke env)
+        shell: pwsh
+        run: |
+          Set-Location "$env:RUNNER_TEMP\probe"
+          $cli = (Resolve-Path "node_modules/@deepseek-ai/libreoffice-kit/lib/cli.js").Path
+          $node = (Get-Command node).Source
+          $env:PATH = ''
+          & $node $cli convert --input "$env:RUNNER_TEMP\inputs\input.docx" --output "$env:RUNNER_TEMP\probe\out-stripped.pdf"
+          if ($LASTEXITCODE -ne 0) { Write-Host "RESULT(stripped-PATH) docx=FAIL exit=$LASTEXITCODE" }
+          else { Write-Host "RESULT(stripped-PATH) docx=OK size=$((Get-Item "$env:RUNNER_TEMP\probe\out-stripped.pdf").Length)" }
