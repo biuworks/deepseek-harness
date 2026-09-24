@@ -36,6 +36,7 @@ jobs:
         shell: pwsh
         run: |
           pip install --quiet python-docx openpyxl python-pptx
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\inputs" | Out-Null
           python apps/desktop/tests/fixtures/office-conversion-inputs.py "$env:RUNNER_TEMP\inputs"
           Get-ChildItem "$env:RUNNER_TEMP\inputs" | Select-Object Name, Length | Format-Table -AutoSize
 
